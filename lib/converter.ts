@@ -50,9 +50,20 @@ function cleanText(text: string) {
   return text.replace(/\u0000/g, "").replace(/[ \t]+/g, " ").trim();
 }
 
+function numberArrayFromView(view: ArrayBufferView): number[] {
+  if (view instanceof DataView) return [];
+  return Array.from(view as unknown as ArrayLike<number>);
+}
+
 function normalizeColorArgs(args: unknown): number[] {
-  if (Array.isArray(args)) return args.flatMap((v) => (typeof v === "number" ? [v] : ArrayBuffer.isView(v) ? Array.from(v as ArrayLike<number>) : []));
-  if (ArrayBuffer.isView(args)) return Array.from(args as ArrayLike<number>);
+  if (Array.isArray(args)) {
+    return args.flatMap((value) => {
+      if (typeof value === "number") return [value];
+      if (ArrayBuffer.isView(value)) return numberArrayFromView(value);
+      return [];
+    });
+  }
+  if (ArrayBuffer.isView(args)) return numberArrayFromView(args);
   return [];
 }
 
@@ -379,63 +390,67 @@ export async function convertToDocx(
       const pdfjs = await import("pdfjs-dist");
       pdfjs.GlobalWorkerOptions.workerSrc = `${PDFJS_CDN}/build/pdf.worker.min.mjs`;
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const pdf = await pdfjs.getDocument({
+      const loadingTask = pdfjs.getDocument({
         data: bytes,
         cMapUrl: `${PDFJS_CDN}/cmaps/`,
         cMapPacked: true,
         standardFontDataUrl: `${PDFJS_CDN}/standard_fonts/`,
         wasmUrl: `${PDFJS_CDN}/wasm/`,
-      }).promise;
+      });
+      const pdf = await loadingTask.promise;
       pageCount = pdf.numPages;
 
-      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-        const page = await pdf.getPage(pageNumber);
-        onProgress({
-          value: 8 + Math.round(((pageNumber - 1) / pageCount) * 70),
-          phase: `Page ${pageNumber} of ${pageCount}`,
-          detail: "Analyzing layout, text and color…",
-        });
-
-        const textContent = await page.getTextContent({ includeMarkedContent: false });
-        const rawItems = (textContent.items as any[]).filter((item) => "str" in item) as PdfTextItem[];
-        const characterCount = rawItems.reduce((sum, item) => sum + cleanText(item.str).length, 0);
-        const digitalPage = characterCount >= 24 && rawItems.length >= 3;
-        const viewport = page.getViewport({ scale: 1 });
-
-        if (settings.mode === "pixel") {
-          const rendered = await canvasFromPdfPage(page, 2);
-          const png = await canvasToPngBytes(rendered.canvas);
-          docChildren.push(pixelCloneParagraph(png, rendered.canvas));
-          if (!worker) worker = await makeWorker(settings, onProgress);
-          usedOcr = true;
-          docChildren.push(
-            new Paragraph({
-              children: [new TextRun({ text: "Editable text", bold: true, color: "64748B", size: 18 })],
-              spacing: { before: 120, after: 70 },
-            }),
-          );
-          docChildren.push(...(await ocrCanvas(rendered.canvas, rendered.ctx, worker, { ...settings, preserveLayout: false }, pageNumber, pageCount, onProgress)));
-        } else if (digitalPage) {
-          const colorSequence = settings.preserveColor ? await extractPdfColors(page, pdfjs) : [];
-          const styled: StyledTextItem[] = rawItems.map((item, index) => ({
-            ...item,
-            color: settings.preserveColor ? colorSequence[Math.min(index, Math.max(0, colorSequence.length - 1))] ?? "111827" : "111827",
-          }));
-          const lines = groupPdfLines(styled);
-          lines.forEach((line, index) => {
-            docChildren.push(pdfLineToParagraph(line, viewport.width, index ? lines[index - 1].y : undefined));
+      try {
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          const page = await pdf.getPage(pageNumber);
+          onProgress({
+            value: 8 + Math.round(((pageNumber - 1) / pageCount) * 70),
+            phase: `Page ${pageNumber} of ${pageCount}`,
+            detail: "Analyzing layout, text and color…",
           });
-        } else {
-          const rendered = await canvasFromPdfPage(page, 2.2);
-          if (!worker) worker = await makeWorker(settings, onProgress);
-          usedOcr = true;
-          docChildren.push(...(await ocrCanvas(rendered.canvas, rendered.ctx, worker, settings, pageNumber, pageCount, onProgress)));
-        }
 
-        if (pageNumber < pdf.numPages) docChildren.push(new Paragraph({ children: [new PageBreak()] }));
-        page.cleanup();
+          const textContent = await page.getTextContent({ includeMarkedContent: false });
+          const rawItems = (textContent.items as any[]).filter((item) => "str" in item) as PdfTextItem[];
+          const characterCount = rawItems.reduce((sum, item) => sum + cleanText(item.str).length, 0);
+          const digitalPage = characterCount >= 24 && rawItems.length >= 3;
+          const viewport = page.getViewport({ scale: 1 });
+
+          if (settings.mode === "pixel") {
+            const rendered = await canvasFromPdfPage(page, 2);
+            const png = await canvasToPngBytes(rendered.canvas);
+            docChildren.push(pixelCloneParagraph(png, rendered.canvas));
+            if (!worker) worker = await makeWorker(settings, onProgress);
+            usedOcr = true;
+            docChildren.push(
+              new Paragraph({
+                children: [new TextRun({ text: "Editable text", bold: true, color: "64748B", size: 18 })],
+                spacing: { before: 120, after: 70 },
+              }),
+            );
+            docChildren.push(...(await ocrCanvas(rendered.canvas, rendered.ctx, worker, { ...settings, preserveLayout: false }, pageNumber, pageCount, onProgress)));
+          } else if (digitalPage) {
+            const colorSequence = settings.preserveColor ? await extractPdfColors(page, pdfjs) : [];
+            const styled: StyledTextItem[] = rawItems.map((item, index) => ({
+              ...item,
+              color: settings.preserveColor ? colorSequence[Math.min(index, Math.max(0, colorSequence.length - 1))] ?? "111827" : "111827",
+            }));
+            const lines = groupPdfLines(styled);
+            lines.forEach((line, index) => {
+              docChildren.push(pdfLineToParagraph(line, viewport.width, index ? lines[index - 1].y : undefined));
+            });
+          } else {
+            const rendered = await canvasFromPdfPage(page, 2.2);
+            if (!worker) worker = await makeWorker(settings, onProgress);
+            usedOcr = true;
+            docChildren.push(...(await ocrCanvas(rendered.canvas, rendered.ctx, worker, settings, pageNumber, pageCount, onProgress)));
+          }
+
+          if (pageNumber < pdf.numPages) docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+          page.cleanup();
+        }
+      } finally {
+        await loadingTask.destroy();
       }
-      await pdf.destroy();
     } else {
       const rendered = await imageFileToCanvas(file);
       worker = await makeWorker(settings, onProgress);
