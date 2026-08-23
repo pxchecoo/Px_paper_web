@@ -20,7 +20,6 @@ A private, browser-first PDF/photo → editable `.docx` converter built for **Gi
 
 See **`DEPLOY.md`** for the shortest GitHub → Vercel checklist.
 
-
 1. Upload this folder to a new GitHub repository.
 2. Go to Vercel and choose **Add New → Project**.
 3. Import the GitHub repository.
@@ -28,6 +27,8 @@ See **`DEPLOY.md`** for the shortest GitHub → Vercel checklist.
 5. Click **Deploy**.
 
 **No environment variables are required.**
+
+> Deployment sanity check: make sure Vercel is building the latest commit from the `main` branch rather than re-deploying an older deployment snapshot.
 
 ## Run locally
 
