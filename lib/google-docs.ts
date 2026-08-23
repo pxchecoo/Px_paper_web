@@ -15,20 +15,22 @@ type GoogleTokenClient = {
   requestAccessToken: (options?: { prompt?: string }) => void;
 };
 
+type GoogleIdentity = {
+  accounts: {
+    oauth2: {
+      initTokenClient: (config: {
+        client_id: string;
+        scope: string;
+        callback: (response: GoogleTokenResponse) => void;
+        error_callback?: (error: { type?: string; message?: string }) => void;
+      }) => GoogleTokenClient;
+    };
+  };
+};
+
 declare global {
   interface Window {
-    google?: {
-      accounts: {
-        oauth2: {
-          initTokenClient: (config: {
-            client_id: string;
-            scope: string;
-            callback: (response: GoogleTokenResponse) => void;
-            error_callback?: (error: { type?: string; message?: string }) => void;
-          }) => GoogleTokenClient;
-        };
-      };
-    };
+    google?: GoogleIdentity;
   }
 }
 
@@ -44,7 +46,7 @@ function googleClientId() {
   return clientId;
 }
 
-async function waitForGoogleIdentity(timeoutMs = 10_000) {
+async function waitForGoogleIdentity(timeoutMs = 10_000): Promise<GoogleIdentity> {
   const started = Date.now();
   while (!window.google?.accounts?.oauth2) {
     if (Date.now() - started > timeoutMs) {
