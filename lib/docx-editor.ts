@@ -4,7 +4,7 @@ import JSZip from "jszip";
 import {
   AlignmentType,
   BorderStyle,
-  Document,
+  Document as DocxDocument,
   HeadingLevel,
   ImageRun,
   Packer,
@@ -32,7 +32,6 @@ type RunState = {
 };
 
 type EditorChild = Paragraph | Table;
-
 type RelationshipMap = Map<string, string>;
 
 function childrenByTag(parent: Element, tagName: string) {
@@ -55,12 +54,7 @@ function attr(element: Element | null | undefined, name: string) {
 }
 
 function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
 function safeHex(value: string | null, fallback = "111827") {
@@ -78,9 +72,7 @@ function emuToPx(value: string | null, fallback: number) {
 function uint8ToBase64(bytes: Uint8Array) {
   let binary = "";
   const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
+  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   return btoa(binary);
 }
 
@@ -93,7 +85,7 @@ function mimeForPath(path: string) {
   return "image/png";
 }
 
-function parseRelationships(xml: Document): RelationshipMap {
+function parseRelationships(xml: XMLDocument): RelationshipMap {
   const map = new Map<string, string>();
   for (const rel of Array.from(xml.getElementsByTagName("Relationship"))) {
     const id = rel.getAttribute("Id");
@@ -123,7 +115,6 @@ async function imageHtmlFromRun(run: Element, zip: JSZip, relationships: Relatio
 async function runToHtml(run: Element, zip: JSZip, relationships: RelationshipMap) {
   const image = await imageHtmlFromRun(run, zip, relationships);
   if (image) return image;
-
   const rPr = firstDirect(run, `${WORD_NS}rPr`);
   const styles: string[] = [];
   const color = safeHex(attr(firstDirect(rPr, `${WORD_NS}color`), `${WORD_NS}val`));
@@ -132,7 +123,6 @@ async function runToHtml(run: Element, zip: JSZip, relationships: RelationshipMa
   const font = attr(fontElement, `${WORD_NS}ascii`) ?? attr(fontElement, `${WORD_NS}hAnsi`);
   const highlight = attr(firstDirect(rPr, `${WORD_NS}highlight`), `${WORD_NS}val`);
   const vertAlign = attr(firstDirect(rPr, `${WORD_NS}vertAlign`), `${WORD_NS}val`);
-
   styles.push(`color:#${color}`);
   if (Number.isFinite(sizeHalfPoints) && sizeHalfPoints > 0) styles.push(`font-size:${sizeHalfPoints / 2}pt`);
   if (font) styles.push(`font-family:${JSON.stringify(font)}`);
@@ -143,14 +133,11 @@ async function runToHtml(run: Element, zip: JSZip, relationships: RelationshipMa
   if (highlight && highlight !== "none") styles.push(`background-color:${highlight}`);
   if (vertAlign === "superscript") styles.push("vertical-align:super;font-size:.78em");
   if (vertAlign === "subscript") styles.push("vertical-align:sub;font-size:.78em");
-
   let content = "";
   for (const child of Array.from(run.children)) {
     if (child.tagName === `${WORD_NS}t`) content += escapeHtml(child.textContent ?? "");
     else if (child.tagName === `${WORD_NS}tab`) content += "&emsp;";
-    else if (child.tagName === `${WORD_NS}br`) {
-      content += attr(child, `${WORD_NS}type`) === "page" ? '<span class="px-page-break-inline"></span>' : "<br>";
-    }
+    else if (child.tagName === `${WORD_NS}br`) content += attr(child, `${WORD_NS}type`) === "page" ? '<span class="px-page-break-inline"></span>' : "<br>";
   }
   if (!content) return "";
   return `<span style="${styles.join(";")}">${content}</span>`;
@@ -166,15 +153,11 @@ async function paragraphToHtml(paragraph: Element, zip: JSZip, relationships: Re
   else if (align === "right") styles.push("text-align:right");
   else if (align === "both") styles.push("text-align:justify");
   if (Number.isFinite(indent) && indent > 0) styles.push(`margin-left:${Math.round(indent / 20)}pt`);
-
   let content = "";
   for (const child of Array.from(paragraph.children)) {
     if (child.tagName === `${WORD_NS}r`) content += await runToHtml(child, zip, relationships);
-    else if (child.tagName === `${WORD_NS}hyperlink`) {
-      for (const run of childrenByTag(child, `${WORD_NS}r`)) content += await runToHtml(run, zip, relationships);
-    }
+    else if (child.tagName === `${WORD_NS}hyperlink`) for (const run of childrenByTag(child, `${WORD_NS}r`)) content += await runToHtml(run, zip, relationships);
   }
-
   const headingMatch = pStyle.match(/Heading\s*([1-6])/i) ?? pStyle.match(/Heading([1-6])/i);
   const tag = headingMatch ? `h${headingMatch[1]}` : "p";
   return `<${tag} style="${styles.join(";")}">${content || "<br>"}</${tag}>`;
@@ -211,7 +194,6 @@ export async function docxBlobToEditorHtml(blob: Blob) {
   const relationships = parseRelationships(relXml);
   const body = firstDescendant(documentXml.documentElement, `${WORD_NS}body`);
   if (!body) throw new Error("PX Editor could not find the Word document body.");
-
   const output: string[] = [];
   for (const child of Array.from(body.children)) {
     if (child.tagName === `${WORD_NS}p`) output.push(await paragraphToHtml(child, zip, relationships));
@@ -255,7 +237,6 @@ function mergeRunState(base: RunState, element: Element) {
   if (tag === "s" || tag === "strike") next.strike = true;
   if (tag === "sup") next.superScript = true;
   if (tag === "sub") next.subScript = true;
-
   const weight = htmlElement.style.fontWeight;
   if (weight === "bold" || Number(weight) >= 600) next.bold = true;
   if (htmlElement.style.fontStyle === "italic") next.italics = true;
@@ -283,31 +264,14 @@ function imageRunFromElement(element: Element) {
   const heightHint = Number(element.getAttribute("data-px-height"));
   const height = Math.max(30, Math.min(980, Number.parseFloat(htmlImage.style.height) || Number(htmlImage.getAttribute("height")) || heightHint || Math.round(width * 0.65)));
   const ext = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
-  return new ImageRun({
-    data: bytes,
-    transformation: { width, height },
-    type: ext as "png" | "jpg" | "gif" | "bmp",
-  });
+  return new ImageRun({ data: bytes, transformation: { width, height }, type: ext as "png" | "jpg" | "gif" | "bmp" });
 }
 
 function inlineRuns(node: Node, inherited: RunState = {}): Array<TextRun | ImageRun> {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent ?? "";
     if (!text) return [];
-    return [
-      new TextRun({
-        text,
-        bold: inherited.bold,
-        italics: inherited.italics,
-        underline: inherited.underline ? {} : undefined,
-        strike: inherited.strike,
-        color: inherited.color,
-        size: inherited.size,
-        font: inherited.font,
-        superScript: inherited.superScript,
-        subScript: inherited.subScript,
-      }),
-    ];
+    return [new TextRun({ text, bold: inherited.bold, italics: inherited.italics, underline: inherited.underline ? {} : undefined, strike: inherited.strike, color: inherited.color, size: inherited.size, font: inherited.font, superScript: inherited.superScript, subScript: inherited.subScript })];
   }
   if (node.nodeType !== Node.ELEMENT_NODE) return [];
   const element = node as Element;
@@ -336,32 +300,22 @@ function paragraphFromElement(element: Element, prefix = "") {
   if (prefix) runs.unshift(new TextRun({ text: prefix }));
   const marginLeft = Number.parseFloat((element as HTMLElement).style.marginLeft || "0");
   const heading = tag === "h1" ? HeadingLevel.HEADING_1 : tag === "h2" ? HeadingLevel.HEADING_2 : tag === "h3" ? HeadingLevel.HEADING_3 : undefined;
-  return new Paragraph({
-    children: runs.length ? runs : [new TextRun("")],
-    heading,
-    alignment: alignmentFromElement(element),
-    indent: marginLeft > 0 ? { left: Math.round(marginLeft * 20) } : undefined,
-    spacing: { after: 90, line: 276 },
-  });
+  return new Paragraph({ children: runs.length ? runs : [new TextRun("")], heading, alignment: alignmentFromElement(element), indent: marginLeft > 0 ? { left: Math.round(marginLeft * 20) } : undefined, spacing: { after: 90, line: 276 } });
 }
 
 function tableFromElement(element: Element) {
   const rows: TableRow[] = [];
   const rowElements = Array.from(element.querySelectorAll(":scope > tbody > tr, :scope > thead > tr, :scope > tr"));
   for (const row of rowElements) {
-    const cells = Array.from(row.children)
-      .filter((cell) => ["td", "th"].includes(cell.tagName.toLowerCase()))
-      .map((cell) => {
-        const paragraphs = Array.from(cell.children)
-          .filter((child) => ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"].includes(child.tagName.toLowerCase()))
-          .map((child) => paragraphFromElement(child));
-        if (!paragraphs.length) paragraphs.push(new Paragraph({ children: inlineRuns(cell) }));
-        return new TableCell({ children: paragraphs });
-      });
+    const cells = Array.from(row.children).filter((cell) => ["td", "th"].includes(cell.tagName.toLowerCase())).map((cell) => {
+      const paragraphs = Array.from(cell.children).filter((child) => ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"].includes(child.tagName.toLowerCase())).map((child) => paragraphFromElement(child));
+      if (!paragraphs.length) paragraphs.push(new Paragraph({ children: inlineRuns(cell) }));
+      return new TableCell({ children: paragraphs });
+    });
     if (cells.length) rows.push(new TableRow({ children: cells }));
   }
   return new Table({
-    rows: rows.length ? rows : [new TableRow({ children: [new TableCell({ children: [new Paragraph("")] })] })],
+    rows: rows.length ? rows : [new TableRow({ children: [new TableCell({ children: [new Paragraph({ children: [new TextRun("")] })] })] })],
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: {
       top: { style: BorderStyle.SINGLE, size: 4, color: "B8C0D0" },
@@ -391,18 +345,14 @@ function htmlToDocChildren(html: string) {
     }
     if (tag === "ul" || tag === "ol") {
       orderedIndex = 1;
-      for (const li of Array.from(node.children).filter((child) => child.tagName.toLowerCase() === "li")) {
-        children.push(paragraphFromElement(li, tag === "ol" ? `${orderedIndex++}. ` : "• "));
-      }
+      for (const li of Array.from(node.children).filter((child) => child.tagName.toLowerCase() === "li")) children.push(paragraphFromElement(li, tag === "ol" ? `${orderedIndex++}. ` : "• "));
       continue;
     }
     if (["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote"].includes(tag)) {
       children.push(paragraphFromElement(node));
       continue;
     }
-    if (tag === "img") {
-      children.push(new Paragraph({ children: inlineRuns(node), alignment: AlignmentType.CENTER }));
-    }
+    if (tag === "img") children.push(new Paragraph({ children: inlineRuns(node), alignment: AlignmentType.CENTER }));
   }
   return children;
 }
@@ -410,21 +360,12 @@ function htmlToDocChildren(html: string) {
 export async function editorHtmlToDocx(html: string, originalFileName: string) {
   const children = htmlToDocChildren(html);
   if (!children.length) children.push(new Paragraph({ children: [new TextRun("")] }));
-  const doc = new Document({
+  const doc = new DocxDocument({
     creator: "PX Editor — by pxcheco",
     title: originalFileName,
     description: "Edited locally in PX Editor.",
-    styles: {
-      default: {
-        document: { run: { font: "Aptos", size: 22, color: "111827" }, paragraph: { spacing: { after: 90, line: 276 } } },
-      },
-    },
-    sections: [
-      {
-        properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } },
-        children,
-      },
-    ],
+    styles: { default: { document: { run: { font: "Aptos", size: 22, color: "111827" }, paragraph: { spacing: { after: 90, line: 276 } } } } },
+    sections: [{ properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } }, children }],
   });
   return Packer.toBlob(doc);
 }
