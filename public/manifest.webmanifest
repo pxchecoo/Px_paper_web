@@ -1,0 +1,10 @@
+{
+  "name": "PX Paper",
+  "short_name": "PX Paper",
+  "description": "Paper to editable docs — by pxcheco",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060712",
+  "theme_color": "#060712",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
