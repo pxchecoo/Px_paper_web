@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "PX Paper — Paper to editable docs",
-  description: "Turn PDFs and paper photos into editable DOCX files directly in your browser. Built by pxcheco.",
+  description: "Turn PDFs and paper photos into editable DOCX files and refine them in PX Editor directly in your browser. Built by pxcheco.",
   applicationName: "PX Paper",
   manifest: "/manifest.webmanifest",
   icons: {
@@ -26,10 +25,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>
-        {children}
-        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
