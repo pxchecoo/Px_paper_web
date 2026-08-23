@@ -5,7 +5,6 @@ import {
   Check,
   ChevronDown,
   Download,
-  ExternalLink,
   FileImage,
   FileText,
   Image as ImageIcon,
@@ -24,8 +23,8 @@ import {
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { convertToDocx } from "@/lib/converter";
 import { downloadBlob, formatBytes, isAcceptedFile, MAX_FILE_SIZE } from "@/lib/file-utils";
-import { createGoogleDocFromDocx } from "@/lib/google-docs";
 import type { ConversionResult, ConversionSettings, ProgressUpdate } from "@/lib/types";
+import PXEditor from "./PXEditor";
 
 const defaultSettings: ConversionSettings = {
   mode: "smart",
@@ -65,8 +64,8 @@ export default function Converter() {
   const [settings, setSettings] = useState(defaultSettings);
   const [progress, setProgress] = useState<ProgressUpdate>({ value: 0, phase: "Ready", detail: "Drop a PDF or photo to begin." });
   const [working, setWorking] = useState(false);
-  const [googleWorking, setGoogleWorking] = useState(false);
   const [result, setResult] = useState<ConversionResult | null>(null);
+  const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
@@ -90,6 +89,7 @@ export default function Converter() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (editing) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "o") {
         event.preventDefault();
         inputRef.current?.click();
@@ -109,6 +109,7 @@ export default function Converter() {
     if (!nextFile) return;
     setError(null);
     setResult(null);
+    setEditing(false);
     if (!isAcceptedFile(nextFile)) {
       setError("Use a PDF, PNG, JPG/JPEG, WEBP or HEIC file.");
       return;
@@ -137,6 +138,7 @@ export default function Converter() {
     setWorking(true);
     setError(null);
     setResult(null);
+    setEditing(false);
     try {
       const converted = await convertToDocx(file, settings, setProgress);
       setResult(converted);
@@ -155,25 +157,13 @@ export default function Converter() {
   function reset() {
     setFile(null);
     setResult(null);
+    setEditing(false);
     setError(null);
     setProgress({ value: 0, phase: "Ready", detail: "Drop a PDF or photo to begin." });
   }
 
-  async function openGoogleDocs() {
-    if (!result || googleWorking) return;
-    setGoogleWorking(true);
-    setError(null);
-    try {
-      const docsUrl = await createGoogleDocFromDocx(result.blob, result.fileName);
-      window.location.assign(docsUrl);
-    } catch (err) {
-      console.error(err);
-      const message = err instanceof Error ? err.message : "Could not open this file in Google Docs.";
-      setError(message);
-      window.alert(message);
-    } finally {
-      setGoogleWorking(false);
-    }
+  if (editing && result) {
+    return <PXEditor result={result} onClose={() => setEditing(false)} />;
   }
 
   return (
@@ -196,7 +186,7 @@ export default function Converter() {
       <section id="top" className="hero container">
         <div className="eyebrow"><Sparkles size={15} /> PX intelligence, zero uploads</div>
         <h1>Paper in.<br /><span>Editable doc out.</span></h1>
-        <p>Convert PDFs, scans and photos into editable Word files — with color-aware OCR, layout reconstruction and Google Docs-ready output.</p>
+        <p>Convert PDFs, scans and photos into editable Word files — then refine them inside the built-in PX Editor without accounts, uploads or OAuth.</p>
         <div className="hero-badges">
           <span><LockKeyhole size={16} /> Files stay on your device</span>
           <span><Palette size={16} /> Color-aware</span>
@@ -292,14 +282,14 @@ export default function Converter() {
           <div className={`status-card glass-card ${result ? "success" : ""} ${error ? "error" : ""}`}>
             <div className="status-top">
               <div className="status-icon">{result ? <Check size={20}/> : error ? <X size={20}/> : <Sparkles size={20}/>}</div>
-              <div className="status-copy"><b>{result ? "Document ready" : error ? "Something went wrong" : progress.phase}</b><span>{result ? `${result.pages} page${result.pages === 1 ? "" : "s"} · ${result.usedOcr ? "OCR + DOCX" : "native PDF text + DOCX"}` : error ?? progress.detail}</span></div>
+              <div className="status-copy"><b>{result ? "Document ready" : error ? "Something went wrong" : progress.phase}</b><span>{result ? `${result.pages} page${result.pages === 1 ? "" : "s"} · ${result.usedOcr ? "OCR + DOCX + PX Editor" : "native PDF text + DOCX + PX Editor"}` : error ?? progress.detail}</span></div>
               {!result && !error && <strong>{progress.value}%</strong>}
             </div>
             {!result && !error && <div className="progress-track"><span style={{ width: `${progress.value}%` }}/></div>}
             {result && (
               <div className="result-actions">
                 <button className="primary-result" onClick={() => downloadBlob(result.blob, result.fileName)}><Download size={17}/> Download .docx</button>
-                <button className="secondary-result" disabled={googleWorking} onClick={() => void openGoogleDocs()}>{googleWorking ? <><span className="spinner"/> Opening Google Docs…</> : <><ExternalLink size={17}/> Open in Google Docs</>}</button>
+                <button className="secondary-result" onClick={() => setEditing(true)}><WandSparkles size={17}/> Edit in PX Editor</button>
                 <button className="icon-button subtle" onClick={reset} aria-label="Convert another"><RotateCcw size={17}/></button>
               </div>
             )}
@@ -308,9 +298,9 @@ export default function Converter() {
       </section>
 
       <section className="trust container">
-        <div className="trust-card"><LockKeyhole/><b>Private by design</b><p>Conversion stays in your browser. Google only receives the result if you choose Open in Google Docs.</p></div>
+        <div className="trust-card"><LockKeyhole/><b>Private by design</b><p>Conversion and editing stay inside your browser. No account, cloud upload or OAuth required.</p></div>
         <div className="trust-card"><Palette/><b>Fidelity-first</b><p>Digital PDFs keep native text; scans use color-aware OCR reconstruction.</p></div>
-        <div className="trust-card"><ExternalLink/><b>Direct Google Docs</b><p>One click uploads the result as a native Google Doc and opens the editor directly.</p></div>
+        <div className="trust-card"><WandSparkles/><b>PX Editor built in</b><p>Edit formatting, colors, alignment and text, then export a fresh Word file instantly.</p></div>
       </section>
 
       <footer className="footer container"><span><span className="brand-mark mini">PX</span> PX Paper</span><p>Built with obsession <span>·</span> <b>by pxcheco</b></p><small>Files stay yours.</small></footer>
