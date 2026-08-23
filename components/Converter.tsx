@@ -24,6 +24,7 @@ import {
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { convertToDocx } from "@/lib/converter";
 import { downloadBlob, formatBytes, isAcceptedFile, MAX_FILE_SIZE } from "@/lib/file-utils";
+import { createGoogleDocFromDocx } from "@/lib/google-docs";
 import type { ConversionResult, ConversionSettings, ProgressUpdate } from "@/lib/types";
 
 const defaultSettings: ConversionSettings = {
@@ -64,6 +65,7 @@ export default function Converter() {
   const [settings, setSettings] = useState(defaultSettings);
   const [progress, setProgress] = useState<ProgressUpdate>({ value: 0, phase: "Ready", detail: "Drop a PDF or photo to begin." });
   const [working, setWorking] = useState(false);
+  const [googleWorking, setGoogleWorking] = useState(false);
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -157,10 +159,21 @@ export default function Converter() {
     setProgress({ value: 0, phase: "Ready", detail: "Drop a PDF or photo to begin." });
   }
 
-  function openGoogleDocs() {
-    if (!result) return;
-    downloadBlob(result.blob, result.fileName);
-    window.open("https://drive.google.com/drive/u/0/my-drive", "_blank", "noopener,noreferrer");
+  async function openGoogleDocs() {
+    if (!result || googleWorking) return;
+    setGoogleWorking(true);
+    setError(null);
+    try {
+      const docsUrl = await createGoogleDocFromDocx(result.blob, result.fileName);
+      window.location.assign(docsUrl);
+    } catch (err) {
+      console.error(err);
+      const message = err instanceof Error ? err.message : "Could not open this file in Google Docs.";
+      setError(message);
+      window.alert(message);
+    } finally {
+      setGoogleWorking(false);
+    }
   }
 
   return (
@@ -286,7 +299,7 @@ export default function Converter() {
             {result && (
               <div className="result-actions">
                 <button className="primary-result" onClick={() => downloadBlob(result.blob, result.fileName)}><Download size={17}/> Download .docx</button>
-                <button className="secondary-result" onClick={openGoogleDocs}><ExternalLink size={17}/> Open in Google Docs</button>
+                <button className="secondary-result" disabled={googleWorking} onClick={() => void openGoogleDocs()}>{googleWorking ? <><span className="spinner"/> Opening Google Docs…</> : <><ExternalLink size={17}/> Open in Google Docs</>}</button>
                 <button className="icon-button subtle" onClick={reset} aria-label="Convert another"><RotateCcw size={17}/></button>
               </div>
             )}
@@ -295,9 +308,9 @@ export default function Converter() {
       </section>
 
       <section className="trust container">
-        <div className="trust-card"><LockKeyhole/><b>Private by design</b><p>No file upload endpoint exists. Conversion happens in your browser.</p></div>
+        <div className="trust-card"><LockKeyhole/><b>Private by design</b><p>Conversion stays in your browser. Google only receives the result if you choose Open in Google Docs.</p></div>
         <div className="trust-card"><Palette/><b>Fidelity-first</b><p>Digital PDFs keep native text; scans use color-aware OCR reconstruction.</p></div>
-        <div className="trust-card"><ExternalLink/><b>Google Docs-ready</b><p>The result is a standard editable .docx. Download it, then open it in Drive.</p></div>
+        <div className="trust-card"><ExternalLink/><b>Direct Google Docs</b><p>One click uploads the result as a native Google Doc and opens the editor directly.</p></div>
       </section>
 
       <footer className="footer container"><span><span className="brand-mark mini">PX</span> PX Paper</span><p>Built with obsession <span>·</span> <b>by pxcheco</b></p><small>Files stay yours.</small></footer>
