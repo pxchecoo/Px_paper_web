@@ -3,6 +3,7 @@
 const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const DEFAULT_GOOGLE_CLIENT_ID = "384206589619-q4osqu9nid7pi8neu1co96g96e58soj5.apps.googleusercontent.com";
 
 type GoogleTokenResponse = {
   access_token?: string;
@@ -37,13 +38,7 @@ declare global {
 let cachedAccessToken: string | null = null;
 
 function googleClientId() {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  if (!clientId) {
-    throw new Error(
-      "Direct Google Docs opening is not configured yet. Add NEXT_PUBLIC_GOOGLE_CLIENT_ID in Vercel after creating a Google OAuth Web client.",
-    );
-  }
-  return clientId;
+  return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
 }
 
 async function waitForGoogleIdentity(timeoutMs = 10_000): Promise<GoogleIdentity> {
